@@ -1,5 +1,3 @@
 # test
 
-# 개요
-
-md 문서를 위한 테스트 페이지 이다.
+This is a test page.

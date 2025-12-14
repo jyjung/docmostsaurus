@@ -10,6 +10,7 @@ import (
 
 	"github.com/jung/doc2git/internal/config"
 	"github.com/jung/doc2git/internal/docmost"
+	"github.com/jung/doc2git/internal/postprocess"
 )
 
 func main() {
@@ -122,6 +123,33 @@ func main() {
 		}
 
 		fmt.Printf("Space '%s': %d files saved to %s\n", exported.Space.Name, len(exported.Files), spaceDir)
+
+		// Post-process: Romanize Korean filenames and add frontmatter
+		fmt.Printf("Post-processing: Romanizing Korean filenames in %s...\n", spaceDir)
+		results, err := postprocess.RomanizeSpace(spaceDir)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to romanize space %s: %v\n", exported.Space.Name, err)
+		} else {
+			for _, r := range results {
+				if r.OriginalPath != r.RomanizedPath {
+					fmt.Printf("  Renamed: %s -> %s\n", r.OriginalPath, r.RomanizedPath)
+				}
+				if r.FrontmatterAdded {
+					fmt.Printf("  Added frontmatter: %s (title: %s)\n", r.RomanizedPath, r.OriginalTitle)
+				}
+			}
+
+			// Move files into matching folders (e.g., meomeideu.md -> meomeideu/meomeideu.md)
+			fmt.Printf("Post-processing: Moving files into matching folders in %s...\n", spaceDir)
+			if err := postprocess.MoveFilesIntoMatchingFolders(spaceDir); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to move files into folders: %v\n", err)
+			}
+
+			// Cleanup empty directories
+			if err := postprocess.CleanupEmptyDirs(spaceDir); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to cleanup empty dirs: %v\n", err)
+			}
+		}
 	}
 
 	fmt.Println()

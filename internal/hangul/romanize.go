@@ -1,6 +1,7 @@
 package hangul
 
 import (
+	"fmt"
 	"strings"
 
 	gohangul "github.com/suapapa/go_hangul"
@@ -15,12 +16,23 @@ var (
 	finals = []string{"", "k", "k", "ks", "n", "nj", "nh", "d", "l", "lg", "lm", "lb", "ls", "lt", "lp", "lh", "m", "b", "bs", "s", "ss", "ng", "j", "ch", "k", "t", "p", "h"}
 )
 
+// isASCIIAlphanumOrSpace checks if the rune is ASCII alphanumeric or space.
+func isASCIIAlphanumOrSpace(r rune) bool {
+	return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == ' '
+}
+
 // Romanize converts Korean text to romanized form.
 func Romanize(word string) string {
 	var result strings.Builder
 	for _, r := range word {
 		if !gohangul.IsHangul(r) {
-			result.WriteRune(r)
+			// 영어 알파벳, 숫자, 공백, 기본 ASCII는 그대로 통과
+			if isASCIIAlphanumOrSpace(r) {
+				result.WriteRune(r)
+			} else {
+				// 그 외 문자(일본어, 중국어 등)는 유니코드 코드포인트로 변환
+				result.WriteString(fmt.Sprintf("U%04X", r))
+			}
 			continue
 		}
 
