@@ -249,6 +249,125 @@ func MoveFilesIntoMatchingFolders(spaceDir string) error {
 	return nil
 }
 
+// MergeKoreanFoldersIntoRomanized moves contents from Korean-named folders into their romanized counterparts
+// e.g., 머메이드/files/ -> meomeideu/files/ when both 머메이드/ and meomeideu/ exist
+func MergeKoreanFoldersIntoRomanized(spaceDir string) error {
+	// Collect all directories at each level
+	dirsByParent := make(map[string][]string)
+
+	err := filepath.Walk(spaceDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() && path != spaceDir {
+			parentDir := filepath.Dir(path)
+			dirsByParent[parentDir] = append(dirsByParent[parentDir], path)
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	// For each parent directory, find Korean folders and their romanized counterparts
+	for _, dirs := range dirsByParent {
+		for _, koreanDir := range dirs {
+			koreanName := filepath.Base(koreanDir)
+
+			// Skip if the folder name doesn't contain Korean characters
+			if !containsKorean(koreanName) {
+				continue
+			}
+
+			// Get the romanized name for this Korean folder
+			romanizedName := hangul.Romanize(koreanName)
+			romanizedName = strings.ReplaceAll(romanizedName, " ", "-")
+
+			// Check if romanized folder exists at the same level
+			romanizedDir := filepath.Join(filepath.Dir(koreanDir), romanizedName)
+
+			if romanizedDir == koreanDir {
+				// Same path, skip
+				continue
+			}
+
+			// Check if romanized directory exists
+			if info, err := os.Stat(romanizedDir); err == nil && info.IsDir() {
+				// Both Korean and romanized folders exist, merge contents
+				fmt.Printf("  Merging Korean folder contents: %s -> %s\n", koreanDir, romanizedDir)
+
+				if err := mergeDirectoryContents(koreanDir, romanizedDir); err != nil {
+					fmt.Printf("Warning: failed to merge %s into %s: %v\n", koreanDir, romanizedDir, err)
+					continue
+				}
+
+				// Remove the now-empty Korean folder
+				if err := os.RemoveAll(koreanDir); err != nil {
+					fmt.Printf("Warning: failed to remove Korean folder %s: %v\n", koreanDir, err)
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+// containsKorean checks if a string contains Korean characters
+func containsKorean(s string) bool {
+	for _, r := range s {
+		// Korean Unicode ranges: Hangul Syllables (AC00-D7AF), Hangul Jamo (1100-11FF), etc.
+		if (r >= 0xAC00 && r <= 0xD7AF) || (r >= 0x1100 && r <= 0x11FF) || (r >= 0x3130 && r <= 0x318F) {
+			return true
+		}
+	}
+	return false
+}
+
+// mergeDirectoryContents moves all contents from src directory to dst directory
+func mergeDirectoryContents(src, dst string) error {
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		return fmt.Errorf("failed to read source directory: %w", err)
+	}
+
+	for _, entry := range entries {
+		srcPath := filepath.Join(src, entry.Name())
+		dstPath := filepath.Join(dst, entry.Name())
+
+		if entry.IsDir() {
+			// If destination directory exists, merge recursively
+			if _, err := os.Stat(dstPath); err == nil {
+				if err := mergeDirectoryContents(srcPath, dstPath); err != nil {
+					return err
+				}
+				// Remove source directory after merging
+				if err := os.RemoveAll(srcPath); err != nil {
+					return fmt.Errorf("failed to remove source directory %s: %w", srcPath, err)
+				}
+			} else {
+				// Destination doesn't exist, just move the directory
+				if err := os.Rename(srcPath, dstPath); err != nil {
+					return fmt.Errorf("failed to move directory %s to %s: %w", srcPath, dstPath, err)
+				}
+				fmt.Printf("    Moved directory: %s -> %s\n", srcPath, dstPath)
+			}
+		} else {
+			// For files, check if destination exists
+			if _, err := os.Stat(dstPath); err == nil {
+				fmt.Printf("    Warning: file already exists, skipping: %s\n", dstPath)
+				continue
+			}
+			// Move the file
+			if err := os.Rename(srcPath, dstPath); err != nil {
+				return fmt.Errorf("failed to move file %s to %s: %w", srcPath, dstPath, err)
+			}
+			fmt.Printf("    Moved file: %s -> %s\n", srcPath, dstPath)
+		}
+	}
+
+	return nil
+}
+
 // CleanupEmptyDirs removes empty directories after renaming
 func CleanupEmptyDirs(spaceDir string) error {
 	return filepath.Walk(spaceDir, func(path string, info os.FileInfo, err error) error {

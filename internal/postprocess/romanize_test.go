@@ -432,3 +432,222 @@ func TestMoveFilesIntoMatchingFolders_EmptyDir(t *testing.T) {
 		t.Fatalf("MoveFilesIntoMatchingFolders failed on empty dir: %v", err)
 	}
 }
+
+// TestMergeKoreanFoldersIntoRomanized_Basic tests basic merging of Korean folder contents
+func TestMergeKoreanFoldersIntoRomanized_Basic(t *testing.T) {
+	// Create temp directory
+	tempDir, err := os.MkdirTemp("", "test-merge-korean-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Setup structure (the problem case from modify.md):
+	// ├── meomeideu/
+	// │   ├── meomeideu.md
+	// │   └── teseuteu-hangeul.md
+	// └── 머메이드/
+	//     └── files/
+	//         └── image.png
+
+	meomeideuDir := filepath.Join(tempDir, "meomeideu")
+	koreanDir := filepath.Join(tempDir, "머메이드")
+	filesDir := filepath.Join(koreanDir, "files")
+
+	if err := os.MkdirAll(meomeideuDir, 0755); err != nil {
+		t.Fatalf("failed to create meomeideu dir: %v", err)
+	}
+	if err := os.MkdirAll(filesDir, 0755); err != nil {
+		t.Fatalf("failed to create files dir: %v", err)
+	}
+
+	// Create files in romanized folder
+	if err := os.WriteFile(filepath.Join(meomeideuDir, "meomeideu.md"), []byte("# Meomeideu"), 0644); err != nil {
+		t.Fatalf("failed to create file: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(meomeideuDir, "teseuteu-hangeul.md"), []byte("# Test"), 0644); err != nil {
+		t.Fatalf("failed to create file: %v", err)
+	}
+
+	// Create files in Korean folder
+	if err := os.WriteFile(filepath.Join(filesDir, "image.png"), []byte("PNG DATA"), 0644); err != nil {
+		t.Fatalf("failed to create file: %v", err)
+	}
+
+	// Run function
+	if err := MergeKoreanFoldersIntoRomanized(tempDir); err != nil {
+		t.Fatalf("MergeKoreanFoldersIntoRomanized failed: %v", err)
+	}
+
+	// Expected result:
+	// ├── meomeideu/
+	// │   ├── files/
+	// │   │   └── image.png
+	// │   ├── meomeideu.md
+	// │   └── teseuteu-hangeul.md
+
+	// Verify files folder was moved to romanized location
+	movedFilesDir := filepath.Join(meomeideuDir, "files")
+	if _, err := os.Stat(movedFilesDir); os.IsNotExist(err) {
+		t.Errorf("files folder should be moved to %s", movedFilesDir)
+	}
+
+	// Verify image.png exists in new location
+	movedImage := filepath.Join(movedFilesDir, "image.png")
+	if _, err := os.Stat(movedImage); os.IsNotExist(err) {
+		t.Errorf("image.png should exist at %s", movedImage)
+	}
+
+	// Verify content
+	content, err := os.ReadFile(movedImage)
+	if err != nil {
+		t.Fatalf("failed to read moved image: %v", err)
+	}
+	if string(content) != "PNG DATA" {
+		t.Errorf("image content mismatch")
+	}
+
+	// Verify Korean folder was removed
+	if _, err := os.Stat(koreanDir); !os.IsNotExist(err) {
+		t.Errorf("Korean folder %s should be removed after merge", koreanDir)
+	}
+
+	// Verify existing files in romanized folder still exist
+	if _, err := os.Stat(filepath.Join(meomeideuDir, "meomeideu.md")); os.IsNotExist(err) {
+		t.Errorf("meomeideu.md should still exist")
+	}
+	if _, err := os.Stat(filepath.Join(meomeideuDir, "teseuteu-hangeul.md")); os.IsNotExist(err) {
+		t.Errorf("teseuteu-hangeul.md should still exist")
+	}
+}
+
+// TestMergeKoreanFoldersIntoRomanized_MultipleFiles tests merging with multiple files
+func TestMergeKoreanFoldersIntoRomanized_MultipleFiles(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "test-merge-korean-multi-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Setup:
+	// ├── meomeideu/
+	// │   └── existing.md
+	// └── 머메이드/
+	//     ├── files/
+	//     │   ├── image1.png
+	//     │   └── image2.png
+	//     └── assets/
+	//         └── style.css
+
+	meomeideuDir := filepath.Join(tempDir, "meomeideu")
+	koreanDir := filepath.Join(tempDir, "머메이드")
+	filesDir := filepath.Join(koreanDir, "files")
+	assetsDir := filepath.Join(koreanDir, "assets")
+
+	for _, dir := range []string{meomeideuDir, filesDir, assetsDir} {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatalf("failed to create dir %s: %v", dir, err)
+		}
+	}
+
+	// Create files
+	testFiles := map[string]string{
+		filepath.Join(meomeideuDir, "existing.md"):  "# Existing",
+		filepath.Join(filesDir, "image1.png"):       "PNG1",
+		filepath.Join(filesDir, "image2.png"):       "PNG2",
+		filepath.Join(assetsDir, "style.css"):       "body {}",
+	}
+
+	for path, content := range testFiles {
+		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+			t.Fatalf("failed to create file %s: %v", path, err)
+		}
+	}
+
+	// Run function
+	if err := MergeKoreanFoldersIntoRomanized(tempDir); err != nil {
+		t.Fatalf("MergeKoreanFoldersIntoRomanized failed: %v", err)
+	}
+
+	// Verify all files moved correctly
+	expectedFiles := []string{
+		filepath.Join(meomeideuDir, "existing.md"),
+		filepath.Join(meomeideuDir, "files", "image1.png"),
+		filepath.Join(meomeideuDir, "files", "image2.png"),
+		filepath.Join(meomeideuDir, "assets", "style.css"),
+	}
+
+	for _, f := range expectedFiles {
+		if _, err := os.Stat(f); os.IsNotExist(err) {
+			t.Errorf("expected file to exist: %s", f)
+		}
+	}
+
+	// Verify Korean folder removed
+	if _, err := os.Stat(koreanDir); !os.IsNotExist(err) {
+		t.Errorf("Korean folder should be removed")
+	}
+}
+
+// TestMergeKoreanFoldersIntoRomanized_NoRomanizedFolder tests when romanized folder doesn't exist
+func TestMergeKoreanFoldersIntoRomanized_NoRomanizedFolder(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "test-merge-korean-noroman-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Setup: Only Korean folder exists, no romanized counterpart
+	// └── 머메이드/
+	//     └── files/
+	//         └── image.png
+
+	koreanDir := filepath.Join(tempDir, "머메이드")
+	filesDir := filepath.Join(koreanDir, "files")
+
+	if err := os.MkdirAll(filesDir, 0755); err != nil {
+		t.Fatalf("failed to create dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(filesDir, "image.png"), []byte("PNG"), 0644); err != nil {
+		t.Fatalf("failed to create file: %v", err)
+	}
+
+	// Run function
+	if err := MergeKoreanFoldersIntoRomanized(tempDir); err != nil {
+		t.Fatalf("MergeKoreanFoldersIntoRomanized failed: %v", err)
+	}
+
+	// Korean folder should still exist (no romanized folder to merge into)
+	if _, err := os.Stat(koreanDir); os.IsNotExist(err) {
+		t.Errorf("Korean folder should remain when no romanized counterpart exists")
+	}
+
+	// Files should still exist in Korean folder
+	if _, err := os.Stat(filepath.Join(filesDir, "image.png")); os.IsNotExist(err) {
+		t.Errorf("image.png should still exist in Korean folder")
+	}
+}
+
+// TestContainsKorean tests the containsKorean helper function
+func TestContainsKorean(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected bool
+	}{
+		{"머메이드", true},
+		{"한글", true},
+		{"meomeideu", false},
+		{"test123", false},
+		{"mixed머메이드text", true},
+		{"", false},
+		{"日本語", false}, // Japanese should not match
+		{"中文", false},   // Chinese should not match
+	}
+
+	for _, tc := range tests {
+		result := containsKorean(tc.input)
+		if result != tc.expected {
+			t.Errorf("containsKorean(%q) = %v, expected %v", tc.input, result, tc.expected)
+		}
+	}
+}

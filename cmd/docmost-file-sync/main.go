@@ -145,6 +145,12 @@ func main() {
 				fmt.Fprintf(os.Stderr, "Warning: failed to move files into folders: %v\n", err)
 			}
 
+			// Merge Korean folders into romanized folders (e.g., 머메이드/files -> meomeideu/files)
+			fmt.Printf("Post-processing: Merging Korean folder contents into romanized folders in %s...\n", spaceDir)
+			if err := postprocess.MergeKoreanFoldersIntoRomanized(spaceDir); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to merge Korean folders: %v\n", err)
+			}
+
 			// Cleanup empty directories
 			if err := postprocess.CleanupEmptyDirs(spaceDir); err != nil {
 				fmt.Fprintf(os.Stderr, "Warning: failed to cleanup empty dirs: %v\n", err)

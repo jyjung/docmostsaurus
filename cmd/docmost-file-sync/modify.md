@@ -1,7 +1,16 @@
-파일이름을  roman으로 변경하고 frontmatter를  추가한뒤에 
-같은 meomeideu 폴더와  memeideu.md파일과 같은 레벨에서 이름이 같은 폴더와 파일이 있을때 파일을 폴더 아래로 이동시키는 로직을 작성해서 적용해줘
+한글 경로-romanize  동작 과정
 
-기존 
+최초 
+```
+├── 한글 경로 하하.md
+├── 머메이드
+│   └── 테스트 한글.md
+├── 머메이드.md
+├── _metadata.json
+└── test.md
+```
+
+romanize 
 ```
 ├── hangeul-gyeongro-haha.md
 ├── meomeideu
@@ -11,7 +20,8 @@
 └── test.md
 ```
 
-생성후 파일 이동
+romanize post processing 
+같은 이름의 md 파일과 폴더가 있으면 폴더로 
 ```
 ├── hangeul-gyeongro-haha.md
 ├── meomeideu
@@ -20,3 +30,42 @@
 ├── _metadata.json
 └── test.md
 ```
+
+
+TODO 문제 발생 해결해야 할 사항. 
+
+최초 
+```
+├── 한글 경로 하하.md
+├── 머메이드
+│   ├── files(아래에 md에서 사용하는 이미지들 존재)
+│   └── 테스트 한글.md
+├── 머메이드.md
+├── _metadata.json
+└── test.md
+```
+
+Problem 처리된 결과 
+```
+├── hangeul-gyeongro-haha.md
+├── meomeideu
+│   ├── meomeideu.md
+│   └── teseuteu-hangeul.md
+├── 머메이드
+│   └── files
+├── _metadata.json
+└── test.md
+```
+
+원하는것. 
+
+```
+├── hangeul-gyeongro-haha.md
+├── meomeideu
+│   ├── files
+│   ├── meomeideu.md
+│   └── teseuteu-hangeul.md
+├── _metadata.json
+└── test.md
+```
+
