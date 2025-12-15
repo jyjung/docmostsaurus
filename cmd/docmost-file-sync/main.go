@@ -124,6 +124,37 @@ func main() {
 
 		fmt.Printf("Space '%s': %d files saved to %s\n", exported.Space.Name, len(exported.Files), spaceDir)
 
+		// Post-process: Remove untitled placeholder files (untitled.md with "# untitled" content)
+		fmt.Printf("Post-processing: Removing untitled placeholder files in %s...\n", spaceDir)
+		if err := postprocess.RemoveUntitledFiles(spaceDir); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to remove untitled files: %v\n", err)
+		}
+
+		// Post-process: Wrap placeholders with backticks (before frontmatter)
+		fmt.Printf("Post-processing: Wrapping placeholders with backticks in %s...\n", spaceDir)
+		if err := postprocess.WrapPlaceholdersWithBackticks(spaceDir); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to wrap placeholders: %v\n", err)
+		}
+
+		// Post-process: Wrap angle brackets with backticks (before frontmatter)
+		fmt.Printf("Post-processing: Wrapping angle brackets with backticks in %s...\n", spaceDir)
+		if err := postprocess.WrapAngleBracketsWithBackticks(spaceDir); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to wrap angle brackets: %v\n", err)
+		}
+
+		// Post-process: Wrap raw HTML (like tables) with code blocks
+		fmt.Printf("Post-processing: Wrapping raw HTML with code blocks in %s...\n", spaceDir)
+		if err := postprocess.WrapRawHTMLWithCodeBlock(spaceDir); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to wrap raw HTML: %v\n", err)
+		}
+
+		// Post-process: Merge files that were incorrectly split due to "/" in title (BEFORE romanization)
+		// This handles Korean filenames like "Security365 환경 인증/인가 관련 공통 에러 페이지.md"
+		fmt.Printf("Post-processing: Merging slash-split files (before romanization) in %s...\n", spaceDir)
+		if err := postprocess.MergeSlashSplitFiles(spaceDir); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to merge slash-split files: %v\n", err)
+		}
+
 		// Post-process: Romanize Korean filenames and add frontmatter
 		fmt.Printf("Post-processing: Romanizing Korean filenames in %s...\n", spaceDir)
 		results, err := postprocess.RomanizeSpace(spaceDir)
@@ -151,9 +182,53 @@ func main() {
 				fmt.Fprintf(os.Stderr, "Warning: failed to merge Korean folders: %v\n", err)
 			}
 
+			// Rename any remaining Korean folders to romanized names
+			fmt.Printf("Post-processing: Renaming remaining Korean folders in %s...\n", spaceDir)
+			if err := postprocess.RenameRemainingKoreanFolders(spaceDir); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to rename remaining Korean folders: %v\n", err)
+			}
+
+			// Rename any remaining Korean .md files to romanized names
+			fmt.Printf("Post-processing: Renaming remaining Korean files in %s...\n", spaceDir)
+			if err := postprocess.RenameRemainingKoreanFiles(spaceDir); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to rename remaining Korean files: %v\n", err)
+			}
+
+			// Sanitize special characters in folder and .md file names (e.g., & -> -and-)
+			fmt.Printf("Post-processing: Sanitizing special characters in %s...\n", spaceDir)
+			if err := postprocess.SanitizeSpecialCharacters(spaceDir); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to sanitize special characters: %v\n", err)
+			}
+
+			// Remove space before .md extension (e.g., "OIDC .md" -> "OIDC.md")
+			fmt.Printf("Post-processing: Removing space before extension in %s...\n", spaceDir)
+			if err := postprocess.RemoveSpaceBeforeExtension(spaceDir); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to remove space before extension: %v\n", err)
+			}
+
+			// Move files into matching folders again (after sanitization, folder/file names may now match)
+			// e.g., sihaengchako.md -> sihaengchako/sihaengchako.md
+			fmt.Printf("Post-processing: Moving files into matching folders (after sanitization) in %s...\n", spaceDir)
+			if err := postprocess.MoveFilesIntoMatchingFolders(spaceDir); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to move files into folders: %v\n", err)
+			}
+
+			// Merge files that were incorrectly split due to "/" in title (AFTER romanization)
+			// This handles romanized filenames like "Security365-hwangyeong-injeung/inga-gwanryeon-gongtong-ereo-peiji.md"
+			fmt.Printf("Post-processing: Merging slash-split files (after romanization) in %s...\n", spaceDir)
+			if err := postprocess.MergeSlashSplitFiles(spaceDir); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to merge slash-split files: %v\n", err)
+			}
+
 			// Cleanup empty directories
 			if err := postprocess.CleanupEmptyDirs(spaceDir); err != nil {
 				fmt.Fprintf(os.Stderr, "Warning: failed to cleanup empty dirs: %v\n", err)
+			}
+
+			// Final pass: Remove untitled placeholder files again (in case any were created during postprocessing)
+			fmt.Printf("Post-processing: Final removal of untitled placeholder files in %s...\n", spaceDir)
+			if err := postprocess.RemoveUntitledFiles(spaceDir); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to remove untitled files (final pass): %v\n", err)
 			}
 		}
 	}
@@ -168,6 +243,7 @@ func main() {
 // sanitizeDirName creates a safe directory name
 func sanitizeDirName(name string) string {
 	replacer := strings.NewReplacer(
+		// " ", "-",
 		"/", "-",
 		"\\", "-",
 		":", "-",

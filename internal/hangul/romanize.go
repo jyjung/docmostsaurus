@@ -1,7 +1,6 @@
 package hangul
 
 import (
-	"fmt"
 	"strings"
 
 	gohangul "github.com/suapapa/go_hangul"
@@ -14,6 +13,44 @@ var (
 	medials = []string{"a", "ae", "ya", "yae", "eo", "e", "yeo", "ye", "o", "wa", "wae", "oe", "yo", "u", "wo", "we", "wi", "yu", "eu", "ui", "i"}
 	// 종성 (0~27, 0은 종성 없음)
 	finals = []string{"", "k", "k", "ks", "n", "nj", "nh", "d", "l", "lg", "lm", "lb", "ls", "lt", "lp", "lh", "m", "b", "bs", "s", "ss", "ng", "j", "ch", "k", "t", "p", "h"}
+
+	// specialCharReplacements maps special characters to their safe replacements
+	specialCharReplacements = map[rune]string{
+		'&': "-and-",
+		'+': "-plus-",
+		'@': "-at-",
+		'#': "-num-",
+		'%': "-pct-",
+		'=': "-eq-",
+		'-': "-",
+		'_': "_",
+		'.': ".",
+		'/': "/",
+	}
+
+	// charactersToRemove are special characters that should be removed entirely
+	charactersToRemove = map[rune]bool{
+		'(':  true,
+		')':  true,
+		'[':  true,
+		']':  true,
+		'{':  true,
+		'}':  true,
+		'\'': true,
+		'"':  true,
+		',':  true,
+		';':  true,
+		'!':  true,
+		'$':  true,
+		'^':  true,
+		'`':  true,
+		'~':  true,
+		'<':  true,
+		'>':  true,
+		'|':  true,
+		'*':  true,
+		'?':  true,
+	}
 )
 
 // isASCIIAlphanumOrSpace checks if the rune is ASCII alphanumeric or space.
@@ -22,17 +59,31 @@ func isASCIIAlphanumOrSpace(r rune) bool {
 }
 
 // Romanize converts Korean text to romanized form.
+// It also handles special characters consistently with SanitizeSpecialCharacters.
 func Romanize(word string) string {
 	var result strings.Builder
 	for _, r := range word {
 		if !gohangul.IsHangul(r) {
-			// 영어 알파벳, 숫자, 공백, 기본 ASCII는 그대로 통과
+			// 영어 알파벳, 숫자, 공백은 그대로 통과
 			if isASCIIAlphanumOrSpace(r) {
 				result.WriteRune(r)
-			} else {
-				// 그 외 문자(일본어, 중국어 등)는 유니코드 코드포인트로 변환
-				result.WriteString(fmt.Sprintf("U%04X", r))
+				continue
 			}
+
+			// Check if it's a character to remove
+			if charactersToRemove[r] {
+				continue
+			}
+
+			// Check if it has a replacement
+			if replacement, ok := specialCharReplacements[r]; ok {
+				result.WriteString(replacement)
+				continue
+			}
+
+			// 그 외 문자(일본어, 중국어 등)는 그냥 통과 (유니코드 변환하지 않음)
+			// Docusaurus에서 지원되지 않는 문자는 SanitizeSpecialCharacters에서 처리됨
+			result.WriteRune(r)
 			continue
 		}
 

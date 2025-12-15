@@ -628,6 +628,221 @@ func TestMergeKoreanFoldersIntoRomanized_NoRomanizedFolder(t *testing.T) {
 	}
 }
 
+// TestMoveFilesIntoMatchingFolders_WithFilesFolder tests that files/ folder is copied when moving md file
+func TestMoveFilesIntoMatchingFolders_WithFilesFolder(t *testing.T) {
+	// Create temp directory
+	tempDir, err := os.MkdirTemp("", "test-move-files-with-files-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Setup structure (the problem case from modify2.md):
+	// ├── 머메이드.md           <- will be moved to meomeideu/
+	// ├── files/                <- images used by 머메이드.md, should be copied to meomeideu/files/
+	// │   └── image-for-root.png
+	// ├── meomeideu/            <- already romanized
+	// │   ├── files/            <- images used by teseuteu-hangeul.md
+	// │   │   └── image-for-child.png
+	// │   └── teseuteu-hangeul.md
+	// After romanization, meomeideu.md should move into meomeideu/ and files/ should be merged
+
+	meomeideuDir := filepath.Join(tempDir, "meomeideu")
+	childFilesDir := filepath.Join(meomeideuDir, "files")
+	rootFilesDir := filepath.Join(tempDir, "files")
+
+	// Create directories
+	if err := os.MkdirAll(childFilesDir, 0755); err != nil {
+		t.Fatalf("failed to create child files dir: %v", err)
+	}
+	if err := os.MkdirAll(rootFilesDir, 0755); err != nil {
+		t.Fatalf("failed to create root files dir: %v", err)
+	}
+
+	// Create files
+	testFiles := map[string]string{
+		filepath.Join(tempDir, "meomeideu.md"):                 "# Meomeideu Content\n![image](files/image-for-root.png)",
+		filepath.Join(meomeideuDir, "teseuteu-hangeul.md"):     "# Child Content\n![image](files/image-for-child.png)",
+		filepath.Join(rootFilesDir, "image-for-root.png"):      "ROOT PNG DATA",
+		filepath.Join(childFilesDir, "image-for-child.png"):    "CHILD PNG DATA",
+	}
+
+	for path, content := range testFiles {
+		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+			t.Fatalf("failed to create file %s: %v", path, err)
+		}
+	}
+
+	// Run function
+	if err := MoveFilesIntoMatchingFolders(tempDir); err != nil {
+		t.Fatalf("MoveFilesIntoMatchingFolders failed: %v", err)
+	}
+
+	// Expected result:
+	// ├── files/                    <- still exists (original)
+	// │   └── image-for-root.png
+	// └── meomeideu/
+	//     ├── files/                <- now has both images
+	//     │   ├── image-for-child.png
+	//     │   └── image-for-root.png  <- copied from root files/
+	//     ├── meomeideu.md          <- moved here
+	//     └── teseuteu-hangeul.md
+
+	// Verify meomeideu.md moved
+	movedFile := filepath.Join(meomeideuDir, "meomeideu.md")
+	if _, err := os.Stat(movedFile); os.IsNotExist(err) {
+		t.Errorf("meomeideu.md should be moved to %s", movedFile)
+	}
+
+	originalMeomeideu := filepath.Join(tempDir, "meomeideu.md")
+	if _, err := os.Stat(originalMeomeideu); !os.IsNotExist(err) {
+		t.Errorf("original meomeideu.md should be removed")
+	}
+
+	// Verify root files/ image was copied to meomeideu/files/
+	copiedImage := filepath.Join(childFilesDir, "image-for-root.png")
+	if _, err := os.Stat(copiedImage); os.IsNotExist(err) {
+		t.Errorf("image-for-root.png should be copied to %s", copiedImage)
+	}
+
+	// Verify copied image content
+	content, err := os.ReadFile(copiedImage)
+	if err != nil {
+		t.Fatalf("failed to read copied image: %v", err)
+	}
+	if string(content) != "ROOT PNG DATA" {
+		t.Errorf("copied image content mismatch: got %q", string(content))
+	}
+
+	// Verify original child image still exists
+	if _, err := os.Stat(filepath.Join(childFilesDir, "image-for-child.png")); os.IsNotExist(err) {
+		t.Errorf("image-for-child.png should still exist")
+	}
+
+	// Verify original child image content unchanged
+	content, err = os.ReadFile(filepath.Join(childFilesDir, "image-for-child.png"))
+	if err != nil {
+		t.Fatalf("failed to read child image: %v", err)
+	}
+	if string(content) != "CHILD PNG DATA" {
+		t.Errorf("child image content should be unchanged: got %q", string(content))
+	}
+
+	// Verify teseuteu-hangeul.md still exists
+	if _, err := os.Stat(filepath.Join(meomeideuDir, "teseuteu-hangeul.md")); os.IsNotExist(err) {
+		t.Errorf("teseuteu-hangeul.md should still exist")
+	}
+}
+
+// TestMoveFilesIntoMatchingFolders_FilesFolderMerge tests that existing files in target are preserved
+func TestMoveFilesIntoMatchingFolders_FilesFolderMerge(t *testing.T) {
+	// Create temp directory
+	tempDir, err := os.MkdirTemp("", "test-move-files-merge-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Setup: Both folders have files/ with different images
+	// Target folder has same-named file that should NOT be overwritten
+
+	targetDir := filepath.Join(tempDir, "target")
+	targetFilesDir := filepath.Join(targetDir, "files")
+	rootFilesDir := filepath.Join(tempDir, "files")
+
+	if err := os.MkdirAll(targetFilesDir, 0755); err != nil {
+		t.Fatalf("failed to create target files dir: %v", err)
+	}
+	if err := os.MkdirAll(rootFilesDir, 0755); err != nil {
+		t.Fatalf("failed to create root files dir: %v", err)
+	}
+
+	// Create files - note: duplicate.png exists in both with different content
+	testFiles := map[string]string{
+		filepath.Join(tempDir, "target.md"):              "# Target Content",
+		filepath.Join(targetFilesDir, "existing.png"):    "EXISTING PNG",
+		filepath.Join(targetFilesDir, "duplicate.png"):   "TARGET DUPLICATE",  // should NOT be overwritten
+		filepath.Join(rootFilesDir, "new-image.png"):     "NEW PNG",
+		filepath.Join(rootFilesDir, "duplicate.png"):     "ROOT DUPLICATE",    // should be skipped
+	}
+
+	for path, content := range testFiles {
+		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+			t.Fatalf("failed to create file %s: %v", path, err)
+		}
+	}
+
+	// Run function
+	if err := MoveFilesIntoMatchingFolders(tempDir); err != nil {
+		t.Fatalf("MoveFilesIntoMatchingFolders failed: %v", err)
+	}
+
+	// Verify new-image.png was copied
+	newImage := filepath.Join(targetFilesDir, "new-image.png")
+	if _, err := os.Stat(newImage); os.IsNotExist(err) {
+		t.Errorf("new-image.png should be copied to %s", newImage)
+	}
+	content, _ := os.ReadFile(newImage)
+	if string(content) != "NEW PNG" {
+		t.Errorf("new-image.png content mismatch")
+	}
+
+	// Verify existing.png still exists
+	existingImage := filepath.Join(targetFilesDir, "existing.png")
+	content, _ = os.ReadFile(existingImage)
+	if string(content) != "EXISTING PNG" {
+		t.Errorf("existing.png content mismatch")
+	}
+
+	// Verify duplicate.png was NOT overwritten (target version preserved)
+	duplicateImage := filepath.Join(targetFilesDir, "duplicate.png")
+	content, _ = os.ReadFile(duplicateImage)
+	if string(content) != "TARGET DUPLICATE" {
+		t.Errorf("duplicate.png should NOT be overwritten, expected 'TARGET DUPLICATE', got %q", string(content))
+	}
+}
+
+// TestMoveFilesIntoMatchingFolders_NoFilesFolder tests when there's no files/ folder to copy
+func TestMoveFilesIntoMatchingFolders_NoFilesFolder(t *testing.T) {
+	// Create temp directory
+	tempDir, err := os.MkdirTemp("", "test-move-files-no-files-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Setup: No files/ folder at the same level as the md file
+	targetDir := filepath.Join(tempDir, "target")
+	if err := os.MkdirAll(targetDir, 0755); err != nil {
+		t.Fatalf("failed to create target dir: %v", err)
+	}
+
+	// Create only the md file, no files/ folder
+	if err := os.WriteFile(filepath.Join(tempDir, "target.md"), []byte("# Target"), 0644); err != nil {
+		t.Fatalf("failed to create file: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(targetDir, "child.md"), []byte("# Child"), 0644); err != nil {
+		t.Fatalf("failed to create file: %v", err)
+	}
+
+	// Run function - should not fail even without files/ folder
+	if err := MoveFilesIntoMatchingFolders(tempDir); err != nil {
+		t.Fatalf("MoveFilesIntoMatchingFolders failed: %v", err)
+	}
+
+	// Verify target.md moved
+	movedFile := filepath.Join(targetDir, "target.md")
+	if _, err := os.Stat(movedFile); os.IsNotExist(err) {
+		t.Errorf("target.md should be moved to %s", movedFile)
+	}
+
+	// Verify no files/ folder was created
+	filesDir := filepath.Join(targetDir, "files")
+	if _, err := os.Stat(filesDir); !os.IsNotExist(err) {
+		t.Errorf("files/ folder should not be created when source doesn't have one")
+	}
+}
+
 // TestContainsKorean tests the containsKorean helper function
 func TestContainsKorean(t *testing.T) {
 	tests := []struct {

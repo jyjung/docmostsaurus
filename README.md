@@ -4,7 +4,7 @@ Docmost 문서를 Docusaurus 형식으로 변환하여 로컬 파일에 동기�
 
 ## 개요
 
-docmostsaurus은 Docmost의 문서를 주기적으로 가져와 Docusaurus 호환 형식의 마크다운으로 변환하고, 로컬 디렉토리에 저장하는 도구입니다.
+docmostsaurus은 Docmost의 문서를 주기적으로 가져와 Docusaurus 포맷의 마크 다운으로 변환해서 로컬 디렉토리에 저장하는 도구입니다.
 
 ## 기능
 
