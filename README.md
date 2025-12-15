@@ -1,22 +1,20 @@
-# doc2git
+# docmostsaurus
 
-Docmost 문서를 Docusaurus 형식으로 변환하여 Git 저장소에 동기화하는 Go 프로젝트
+Docmost 문서를 Docusaurus 형식으로 변환하여 로컬 파일에 동기화하는 Go 프로젝트
 
 ## 개요
 
-doc2git은 Docmost의 문서를 주기적으로 가져와 Docusaurus 호환 형식의 마크다운으로 변환하고, Git 저장소에 자동으로 커밋하는 도구입니다.
+docmostsaurus은 Docmost의 문서를 주기적으로 가져와 Docusaurus 호환 형식의 마크다운으로 변환하고, 로컬 디렉토리에 저장하는 도구입니다.
 
 ## 기능
 
 - Docmost API를 통한 문서 자동 동기화
 - Docusaurus 호환 마크다운 변환 (Frontmatter, 사이드바 구조)
 - 주기적 동기화 스케줄링
-- Git 자동 커밋
 
 ## 요구사항
 
 - Go 1.21 이상
-- Git
 - Docmost API 접근 권한
 
 ## 설치
@@ -24,9 +22,9 @@ doc2git은 Docmost의 문서를 주기적으로 가져와 Docusaurus 호환 형�
 ### 소스에서 빌드
 
 ```bash
-git clone https://github.com/jung/doc2git.git
-cd doc2git
-go build -o doc2git ./cmd/doc2git
+git clone https://github.com/jyjung/docmostsaurus.git
+cd docmostsaurus
+go build -o docmostsaurus ./cmd/docmostsaurus
 ```
 
 ### Docker 사용
@@ -41,31 +39,27 @@ docker-compose up -d
 
 | 환경변수 | 설명 | 기본값 |
 |---------|------|--------|
-| `DOCMOST_CLIENT_ID` | Docmost API 클라이언트 ID | (필수) |
-| `DOCMOST_CLIENT_SECRET` | Docmost API 클라이언트 시크릿 | (필수) |
 | `DOCMOST_BASE_URL` | Docmost 서버 URL | (필수) |
-| `SYNC_INTERVAL` | 동기화 주기 | `1h` |
+| `DOCMOST_EMAIL` | Docmost 로그인 이메일 | (필수) |
+| `DOCMOST_PASSWORD` | Docmost 로그인 비밀번호 | (필수) |
 | `OUTPUT_DIR` | 출력 디렉토리 경로 | `./output` |
-| `GIT_REPO_PATH` | Git 저장소 경로 | `./docusaurus-docs` |
-| `GIT_BRANCH` | 커밋할 브랜치 | `main` |
-| `AUTO_PUSH` | 자동 push 활성화 | `false` |
+| `SYNC_INTERVAL` | 동기화 주기 (선택) | `1h` |
 
 ## 실행
 
 ### 환경변수 설정
 
 ```bash
-export DOCMOST_CLIENT_ID="your-client-id"
-export DOCMOST_CLIENT_SECRET="your-client-secret"
-export DOCMOST_BASE_URL="https://your-docmost-instance.com"
+export DOCMOST_BASE_URL="https://your-docmost-instance.com/api"
+export DOCMOST_EMAIL="your-email@example.com"
+export DOCMOST_PASSWORD="your-password"
 export OUTPUT_DIR="./output"
-export GIT_REPO_PATH="./docusaurus-docs"
 ```
 
 ### 직접 실행
 
 ```bash
-go run cmd/doc2git/main.go
+go run cmd/docmostsaurus/main.go
 ```
 
 ### Docker Compose 실행
@@ -92,9 +86,9 @@ docker-compose logs -f
 ## 프로젝트 구조
 
 ```
-doc2git/
+docmostsaurus/
 ├── cmd/
-│   └── doc2git/
+│   └── docmostsaurus/
 │       └── main.go           # 엔트리포인트
 ├── internal/
 │   ├── config/
@@ -107,8 +101,6 @@ doc2git/
 │   │   ├── converter.go      # 마크다운 변환 로직
 │   │   ├── frontmatter.go    # Frontmatter 생성
 │   │   └── sidebar.go        # 사이드바 JSON 생성
-│   ├── git/
-│   │   └── git.go            # Git 작업 처리
 │   └── scheduler/
 │       └── scheduler.go      # 주기적 실행 스케줄러
 ├── pkg/
