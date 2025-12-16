@@ -8,13 +8,16 @@ import (
 // Config holds all configuration for the application
 type Config struct {
 	// Docmost configuration
-	DocmostBaseURL string
-	DocmostEmail   string
+	DocmostBaseURL  string
+	DocmostEmail    string
 	DocmostPassword string
 
 	// Sync settings
 	SyncInterval time.Duration
 	OutputDir    string
+
+	// HTTP server settings
+	HTTPPort string
 
 	// Git settings
 	GitRepoPath  string
@@ -32,6 +35,7 @@ func Load() (*Config, error) {
 		DocmostEmail:    getEnv("DOCMOST_EMAIL", ""),
 		DocmostPassword: getEnv("DOCMOST_PASSWORD", ""),
 		OutputDir:       getEnv("OUTPUT_DIR", "./output"),
+		HTTPPort:    getEnv("HTTP_PORT", ":8080"),
 		GitRepoPath:     getEnv("GIT_REPO_PATH", "./docusaurus-docs"),
 		GitBranch:       getEnv("GIT_BRANCH", "main"),
 		AutoPush:        getEnv("AUTO_PUSH", "false") == "true",

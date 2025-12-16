@@ -1,32 +1,27 @@
 services:
-  doc2git:
+  docmostsaurus:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: doc2git
+    container_name: docmostsaurus
     restart: unless-stopped
     environment:
       # Docmost configuration
       - DOCMOST_BASE_URL=${DOCMOST_BASE_URL:-http://docmost:3000}
-      - DOCMOST_API_TOKEN=${DOCMOST_API_TOKEN}
+      - DOCMOST_EMAIL=${DOCMOST_EMAIL}
+      - DOCMOST_PASSWORD=${DOCMOST_PASSWORD}
       # Sync settings
       - SYNC_INTERVAL=${SYNC_INTERVAL:-1h}
       - OUTPUT_DIR=/app/output
-      # Git settings
-      - GIT_REPO_PATH=/app/repo
-      - GIT_BRANCH=${GIT_BRANCH:-main}
-      - AUTO_PUSH=${AUTO_PUSH:-false}
-      # Git Remote (optional)
-      - GIT_REMOTE_URL=${GIT_REMOTE_URL:-}
-      - GIT_USERNAME=${GIT_USERNAME:-}
-      - GIT_PASSWORD=${GIT_PASSWORD:-}
+      # Health check port 
+      - HTTP_PORT=:8080
+      # Note: Lock file uses /tmp/docmostsaurus.lock (hardcoded)
     volumes:
-      # Persist output and git repository
       - ./output:/app/output
-      - ./repo:/app/repo
-    networks:
-      - docmost_default
-
-networks:
-  docmost_default:
-    external: true
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    stop_grace_period: 60s

@@ -13,31 +13,41 @@ RUN go mod download
 COPY . .
 
 # Build the binary
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o doc2git ./cmd/doc2git
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o docmost-sync ./cmd/docmost-file-sync
 
 # Final stage
 FROM alpine:3.19
 
-# Install git and ca-certificates
-RUN apk add --no-cache git ca-certificates tzdata
+# Install git, ca-certificates, and curl for health checks
+RUN apk add --no-cache git ca-certificates tzdata curl
 
 WORKDIR /app
 
 # Copy binary from builder
-COPY --from=builder /app/doc2git .
+COPY --from=builder /app/docmost-sync .
 
 # Create directories for output and git repo
 RUN mkdir -p /app/output /app/repo
 
 # Set default environment variables
 ENV OUTPUT_DIR=/app/output
-ENV GIT_REPO_PATH=/app/repo
-ENV GIT_BRANCH=main
 ENV SYNC_INTERVAL=1h
+ENV HTTP_PORT=:8080
+# Note: Lock file uses /tmp/docmostsaurus.lock (hardcoded)
 
 # Run as non-root user
-RUN adduser -D -u 1000 doc2git
-RUN chown -R doc2git:doc2git /app
-USER doc2git
+RUN adduser -D -u 1000 docmost-sync
+RUN chown -R docmost-sync:docmost-sync /app
+USER docmost-sync
 
-ENTRYPOINT ["/app/doc2git"]
+# Expose health check port
+EXPOSE 8080
+
+# Health check configuration
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:8080/health || exit 1
+
+# SIGTERM for graceful shutdown
+STOPSIGNAL SIGTERM
+
+ENTRYPOINT ["/app/docmost-sync"]

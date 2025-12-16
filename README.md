@@ -24,12 +24,17 @@ docmostsaurus은 Docmost의 문서를 주기적으로 가져와 Docusaurus 포�
 ```bash
 git clone https://github.com/jyjung/docmostsaurus.git
 cd docmostsaurus
-go build -o docmostsaurus ./cmd/docmostsaurus
+go build -o docmost-sync ./cmd/docmost-file-sync
 ```
 
 ### Docker 사용
 
 ```bash
+# 이미지 빌드 및 컨테이너 실행
+docker-compose up -d --build
+
+# 또는 빌드와 실행을 분리
+docker-compose build
 docker-compose up -d
 ```
 
@@ -44,6 +49,9 @@ docker-compose up -d
 | `DOCMOST_PASSWORD` | Docmost 로그인 비밀번호 | (필수) |
 | `OUTPUT_DIR` | 출력 디렉토리 경로 | `./output` |
 | `SYNC_INTERVAL` | 동기화 주기 (선택) | `1h` |
+| `HTTP_PORT` | HTTP 서버 포트 (헬스체크/API) | `:8080` |
+
+> **Note**: 동시 실행 방지를 위해 `/tmp/docmostsaurus.lock` 파일을 사용합니다. 컨테이너 환경에서는 `/tmp` 디렉토리에 쓰기 권한이 필요합니다.
 
 ## 실행
 
@@ -55,12 +63,13 @@ export DOCMOST_EMAIL="your-email@example.com"
 export DOCMOST_PASSWORD="your-password"
 export OUTPUT_DIR="./output"
 export SYNC_INTERVAL="1h"
+export HTTP_PORT=":8080"
 ```
 
 ### 직접 실행
 
 ```bash
-go run cmd/docmostsaurus/main.go
+go run ./cmd/docmost-file-sync
 ```
 
 ### Docker Compose 실행
@@ -72,16 +81,28 @@ cp .env.example .env
 # .env 파일을 편집하여 실제 값 입력
 ```
 
-2. 실행:
+2. 이미지 빌드 및 실행:
 
 ```bash
-docker-compose up -d
+docker-compose up -d --build
 ```
 
 3. 로그 확인:
 
 ```bash
-docker-compose logs -f
+docker-compose logs -f docmostsaurus
+```
+
+4. 헬스체크 확인:
+
+```bash
+curl http://localhost:8080/health
+```
+
+5. 컨테이너 중지 (graceful shutdown 지원):
+
+```bash
+docker-compose down
 ```
 
 ## 프로젝트 구조
@@ -89,28 +110,34 @@ docker-compose logs -f
 ```
 docmostsaurus/
 ├── cmd/
-│   └── docmostsaurus/
-│       └── main.go           # 엔트리포인트
+│   └── docmost-file-sync/
+│       └── main.go              # 엔트리포인트
 ├── internal/
 │   ├── config/
-│   │   └── config.go         # 환경변수 및 설정 관리
+│   │   └── config.go            # 환경변수 및 설정 관리
 │   ├── docmost/
-│   │   ├── client.go         # Docmost API 클라이언트
-│   │   ├── auth.go           # 인증 처리
-│   │   └── export.go         # Export API 호출
-│   ├── converter/
-│   │   ├── converter.go      # 마크다운 변환 로직
-│   │   ├── frontmatter.go    # Frontmatter 생성
-│   │   └── sidebar.go        # 사이드바 JSON 생성
+│   │   ├── client.go            # Docmost API 클라이언트 및 인증
+│   │   └── export.go            # Export API 호출
+│   ├── hangul/
+│   │   ├── romanize.go          # 한글 로마자화 변환
+│   │   └── romanize_test.go
+│   ├── health/
+│   │   └── health.go            # HTTP 헬스체크 서버
+│   ├── lock/
+│   │   └── filelock.go          # 파일 기반 동시 실행 방지
+│   ├── postprocess/
+│   │   ├── placeholder.go       # Placeholder/React Fragment 래핑
+│   │   ├── romanize.go          # 파일명/폴더명 로마자화
+│   │   ├── sanitize.go          # 특수문자 치환 및 정리
+│   │   └── *_test.go            # 테스트 파일
 │   └── scheduler/
-│       └── scheduler.go      # 주기적 실행 스케줄러
-├── pkg/
-│   └── markdown/
-│       └── parser.go         # 마크다운 파싱 유틸리티
+│       └── scheduler.go         # 주기적 실행 스케줄러
+├── docs/                        # 개발 문서
+├── .env.example                 # 환경변수 예제
+├── Dockerfile                   # 멀티스테이지 Docker 빌드
+├── docker-compose.yml           # Docker Compose 설정
 ├── go.mod
 ├── go.sum
-├── Dockerfile
-├── docker-compose.yml
 └── README.md
 ```
 
