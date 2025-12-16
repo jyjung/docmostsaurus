@@ -79,17 +79,26 @@ func main() {
 	// Save exported files to output directory
 	totalFiles := 0
 	for _, exported := range exportedSpaces {
-		spaceDir := filepath.Join(cfg.OutputDir, sanitizeDirName(exported.Space.Name))
+		spaceName := sanitizeDirName(exported.Space.Name)
+		spaceDir := filepath.Join(cfg.OutputDir, spaceName)
+		spaceDirTemp := filepath.Join(cfg.OutputDir, spaceName+"_temp")
+		spaceDirOld := filepath.Join(cfg.OutputDir, spaceName+"_old")
 
-		// Create space directory
-		if err := os.MkdirAll(spaceDir, 0755); err != nil {
-			fmt.Fprintf(os.Stderr, "Error creating directory %s: %v\n", spaceDir, err)
+		// Clean up any existing temp directory from previous failed runs
+		cleanupTempDir(spaceDirTemp)
+
+		// Create temp directory for atomic swap
+		if err := os.MkdirAll(spaceDirTemp, 0755); err != nil {
+			fmt.Fprintf(os.Stderr, "Error creating temp directory %s: %v\n", spaceDirTemp, err)
 			continue
 		}
 
-		// Write files
+		// Track if any error occurred during processing
+		var processingError error
+
+		// Write files to temp directory
 		for filename, content := range exported.Files {
-			filePath := filepath.Join(spaceDir, filename)
+			filePath := filepath.Join(spaceDirTemp, filename)
 
 			// Create parent directories if needed
 			parentDir := filepath.Dir(filePath)
@@ -107,57 +116,66 @@ func main() {
 			totalFiles++
 		}
 
-		// Save metadata JSON file
+		// Save metadata JSON file to temp directory
 		if exported.Metadata != nil {
-			metaPath := filepath.Join(spaceDir, "_metadata.json")
+			metaPath := filepath.Join(spaceDirTemp, "_metadata.json")
 			metaData, err := json.MarshalIndent(exported.Metadata, "", "  ")
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error marshaling metadata for %s: %v\n", exported.Space.Name, err)
+				processingError = err
 			} else {
 				if err := os.WriteFile(metaPath, metaData, 0644); err != nil {
 					fmt.Fprintf(os.Stderr, "Error writing metadata file %s: %v\n", metaPath, err)
+					processingError = err
 				} else {
 					fmt.Printf("Space '%s': metadata saved to %s\n", exported.Space.Name, metaPath)
 				}
 			}
 		}
 
-		fmt.Printf("Space '%s': %d files saved to %s\n", exported.Space.Name, len(exported.Files), spaceDir)
+		// Check for errors before post-processing
+		if processingError != nil {
+			fmt.Fprintf(os.Stderr, "Skipping space '%s' due to errors, cleaning up temp directory\n", exported.Space.Name)
+			cleanupTempDir(spaceDirTemp)
+			continue
+		}
+
+		fmt.Printf("Space '%s': %d files saved to %s\n", exported.Space.Name, len(exported.Files), spaceDirTemp)
 
 		// Post-process: Remove untitled placeholder files (untitled.md with "# untitled" content)
-		fmt.Printf("Post-processing: Removing untitled placeholder files in %s...\n", spaceDir)
-		if err := postprocess.RemoveUntitledFiles(spaceDir); err != nil {
+		fmt.Printf("Post-processing: Removing untitled placeholder files in %s...\n", spaceDirTemp)
+		if err := postprocess.RemoveUntitledFiles(spaceDirTemp); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to remove untitled files: %v\n", err)
 		}
 
 		// Post-process: Wrap placeholders with backticks (before frontmatter)
-		fmt.Printf("Post-processing: Wrapping placeholders with backticks in %s...\n", spaceDir)
-		if err := postprocess.WrapPlaceholdersWithBackticks(spaceDir); err != nil {
+		fmt.Printf("Post-processing: Wrapping placeholders with backticks in %s...\n", spaceDirTemp)
+		if err := postprocess.WrapPlaceholdersWithBackticks(spaceDirTemp); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to wrap placeholders: %v\n", err)
 		}
 
 		// Post-process: Wrap angle brackets with backticks (before frontmatter)
-		fmt.Printf("Post-processing: Wrapping angle brackets with backticks in %s...\n", spaceDir)
-		if err := postprocess.WrapAngleBracketsWithBackticks(spaceDir); err != nil {
+		fmt.Printf("Post-processing: Wrapping angle brackets with backticks in %s...\n", spaceDirTemp)
+		if err := postprocess.WrapAngleBracketsWithBackticks(spaceDirTemp); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to wrap angle brackets: %v\n", err)
 		}
 
 		// Post-process: Wrap raw HTML (like tables) with code blocks
-		fmt.Printf("Post-processing: Wrapping raw HTML with code blocks in %s...\n", spaceDir)
-		if err := postprocess.WrapRawHTMLWithCodeBlock(spaceDir); err != nil {
+		fmt.Printf("Post-processing: Wrapping raw HTML with code blocks in %s...\n", spaceDirTemp)
+		if err := postprocess.WrapRawHTMLWithCodeBlock(spaceDirTemp); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to wrap raw HTML: %v\n", err)
 		}
 
 		// Post-process: Merge files that were incorrectly split due to "/" in title (BEFORE romanization)
 		// This handles Korean filenames like "Security365 환경 인증/인가 관련 공통 에러 페이지.md"
-		fmt.Printf("Post-processing: Merging slash-split files (before romanization) in %s...\n", spaceDir)
-		if err := postprocess.MergeSlashSplitFiles(spaceDir); err != nil {
+		fmt.Printf("Post-processing: Merging slash-split files (before romanization) in %s...\n", spaceDirTemp)
+		if err := postprocess.MergeSlashSplitFiles(spaceDirTemp); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to merge slash-split files: %v\n", err)
 		}
 
 		// Post-process: Romanize Korean filenames and add frontmatter
-		fmt.Printf("Post-processing: Romanizing Korean filenames in %s...\n", spaceDir)
-		results, err := postprocess.RomanizeSpace(spaceDir)
+		fmt.Printf("Post-processing: Romanizing Korean filenames in %s...\n", spaceDirTemp)
+		results, err := postprocess.RomanizeSpace(spaceDirTemp)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to romanize space %s: %v\n", exported.Space.Name, err)
 		} else {
@@ -171,66 +189,75 @@ func main() {
 			}
 
 			// Move files into matching folders (e.g., meomeideu.md -> meomeideu/meomeideu.md)
-			fmt.Printf("Post-processing: Moving files into matching folders in %s...\n", spaceDir)
-			if err := postprocess.MoveFilesIntoMatchingFolders(spaceDir); err != nil {
+			fmt.Printf("Post-processing: Moving files into matching folders in %s...\n", spaceDirTemp)
+			if err := postprocess.MoveFilesIntoMatchingFolders(spaceDirTemp); err != nil {
 				fmt.Fprintf(os.Stderr, "Warning: failed to move files into folders: %v\n", err)
 			}
 
 			// Merge Korean folders into romanized folders (e.g., 머메이드/files -> meomeideu/files)
-			fmt.Printf("Post-processing: Merging Korean folder contents into romanized folders in %s...\n", spaceDir)
-			if err := postprocess.MergeKoreanFoldersIntoRomanized(spaceDir); err != nil {
+			fmt.Printf("Post-processing: Merging Korean folder contents into romanized folders in %s...\n", spaceDirTemp)
+			if err := postprocess.MergeKoreanFoldersIntoRomanized(spaceDirTemp); err != nil {
 				fmt.Fprintf(os.Stderr, "Warning: failed to merge Korean folders: %v\n", err)
 			}
 
 			// Rename any remaining Korean folders to romanized names
-			fmt.Printf("Post-processing: Renaming remaining Korean folders in %s...\n", spaceDir)
-			if err := postprocess.RenameRemainingKoreanFolders(spaceDir); err != nil {
+			fmt.Printf("Post-processing: Renaming remaining Korean folders in %s...\n", spaceDirTemp)
+			if err := postprocess.RenameRemainingKoreanFolders(spaceDirTemp); err != nil {
 				fmt.Fprintf(os.Stderr, "Warning: failed to rename remaining Korean folders: %v\n", err)
 			}
 
 			// Rename any remaining Korean .md files to romanized names
-			fmt.Printf("Post-processing: Renaming remaining Korean files in %s...\n", spaceDir)
-			if err := postprocess.RenameRemainingKoreanFiles(spaceDir); err != nil {
+			fmt.Printf("Post-processing: Renaming remaining Korean files in %s...\n", spaceDirTemp)
+			if err := postprocess.RenameRemainingKoreanFiles(spaceDirTemp); err != nil {
 				fmt.Fprintf(os.Stderr, "Warning: failed to rename remaining Korean files: %v\n", err)
 			}
 
 			// Sanitize special characters in folder and .md file names (e.g., & -> -and-)
-			fmt.Printf("Post-processing: Sanitizing special characters in %s...\n", spaceDir)
-			if err := postprocess.SanitizeSpecialCharacters(spaceDir); err != nil {
+			fmt.Printf("Post-processing: Sanitizing special characters in %s...\n", spaceDirTemp)
+			if err := postprocess.SanitizeSpecialCharacters(spaceDirTemp); err != nil {
 				fmt.Fprintf(os.Stderr, "Warning: failed to sanitize special characters: %v\n", err)
 			}
 
 			// Remove space before .md extension (e.g., "OIDC .md" -> "OIDC.md")
-			fmt.Printf("Post-processing: Removing space before extension in %s...\n", spaceDir)
-			if err := postprocess.RemoveSpaceBeforeExtension(spaceDir); err != nil {
+			fmt.Printf("Post-processing: Removing space before extension in %s...\n", spaceDirTemp)
+			if err := postprocess.RemoveSpaceBeforeExtension(spaceDirTemp); err != nil {
 				fmt.Fprintf(os.Stderr, "Warning: failed to remove space before extension: %v\n", err)
 			}
 
 			// Move files into matching folders again (after sanitization, folder/file names may now match)
 			// e.g., sihaengchako.md -> sihaengchako/sihaengchako.md
-			fmt.Printf("Post-processing: Moving files into matching folders (after sanitization) in %s...\n", spaceDir)
-			if err := postprocess.MoveFilesIntoMatchingFolders(spaceDir); err != nil {
+			fmt.Printf("Post-processing: Moving files into matching folders (after sanitization) in %s...\n", spaceDirTemp)
+			if err := postprocess.MoveFilesIntoMatchingFolders(spaceDirTemp); err != nil {
 				fmt.Fprintf(os.Stderr, "Warning: failed to move files into folders: %v\n", err)
 			}
 
 			// Merge files that were incorrectly split due to "/" in title (AFTER romanization)
 			// This handles romanized filenames like "Security365-hwangyeong-injeung/inga-gwanryeon-gongtong-ereo-peiji.md"
-			fmt.Printf("Post-processing: Merging slash-split files (after romanization) in %s...\n", spaceDir)
-			if err := postprocess.MergeSlashSplitFiles(spaceDir); err != nil {
+			fmt.Printf("Post-processing: Merging slash-split files (after romanization) in %s...\n", spaceDirTemp)
+			if err := postprocess.MergeSlashSplitFiles(spaceDirTemp); err != nil {
 				fmt.Fprintf(os.Stderr, "Warning: failed to merge slash-split files: %v\n", err)
 			}
 
 			// Cleanup empty directories
-			if err := postprocess.CleanupEmptyDirs(spaceDir); err != nil {
+			if err := postprocess.CleanupEmptyDirs(spaceDirTemp); err != nil {
 				fmt.Fprintf(os.Stderr, "Warning: failed to cleanup empty dirs: %v\n", err)
 			}
 
 			// Final pass: Remove untitled placeholder files again (in case any were created during postprocessing)
-			fmt.Printf("Post-processing: Final removal of untitled placeholder files in %s...\n", spaceDir)
-			if err := postprocess.RemoveUntitledFiles(spaceDir); err != nil {
+			fmt.Printf("Post-processing: Final removal of untitled placeholder files in %s...\n", spaceDirTemp)
+			if err := postprocess.RemoveUntitledFiles(spaceDirTemp); err != nil {
 				fmt.Fprintf(os.Stderr, "Warning: failed to remove untitled files (final pass): %v\n", err)
 			}
 		}
+
+		// Perform atomic swap: replace old directory with new one
+		fmt.Printf("Performing atomic swap for space '%s'...\n", exported.Space.Name)
+		if err := atomicSwap(spaceDir, spaceDirTemp, spaceDirOld); err != nil {
+			fmt.Fprintf(os.Stderr, "Error during atomic swap for %s: %v\n", exported.Space.Name, err)
+			cleanupTempDir(spaceDirTemp)
+			continue
+		}
+		fmt.Printf("Space '%s': successfully swapped to %s\n", exported.Space.Name, spaceDir)
 	}
 
 	fmt.Println()
@@ -255,4 +282,57 @@ func sanitizeDirName(name string) string {
 		"|", "",
 	)
 	return strings.TrimSpace(replacer.Replace(name))
+}
+
+// atomicSwap performs an atomic directory swap using the Blue-Green deployment pattern.
+// It replaces finalDir with tempDir atomically by:
+// 1. Renaming current finalDir to oldDir (if exists)
+// 2. Renaming tempDir to finalDir
+// 3. Removing oldDir
+// This ensures zero-downtime updates and safe rollback on failure.
+func atomicSwap(finalDir, tempDir, oldDir string) error {
+	// 1. Remove any existing old directory from previous runs
+	if _, err := os.Stat(oldDir); err == nil {
+		if err := os.RemoveAll(oldDir); err != nil {
+			return fmt.Errorf("failed to remove existing old directory: %w", err)
+		}
+	}
+
+	// 2. Rename current directory to old (if it exists)
+	if _, err := os.Stat(finalDir); err == nil {
+		if err := os.Rename(finalDir, oldDir); err != nil {
+			return fmt.Errorf("failed to rename current to old: %w", err)
+		}
+	}
+
+	// 3. Rename temp directory to final
+	if err := os.Rename(tempDir, finalDir); err != nil {
+		// Rollback: restore old directory to final
+		if _, statErr := os.Stat(oldDir); statErr == nil {
+			if rollbackErr := os.Rename(oldDir, finalDir); rollbackErr != nil {
+				return fmt.Errorf("failed to rename temp to final: %w (rollback also failed: %v)", err, rollbackErr)
+			}
+		}
+		return fmt.Errorf("failed to rename temp to final: %w", err)
+	}
+
+	// 4. Remove old directory (swap completed, this is just cleanup)
+	if _, err := os.Stat(oldDir); err == nil {
+		if err := os.RemoveAll(oldDir); err != nil {
+			// Just warn, the swap was successful
+			fmt.Printf("Warning: failed to remove old directory %s: %v\n", oldDir, err)
+		}
+	}
+
+	return nil
+}
+
+// cleanupTempDir removes the temporary directory if it exists.
+// Used for cleanup on error.
+func cleanupTempDir(tempDir string) {
+	if _, err := os.Stat(tempDir); err == nil {
+		if err := os.RemoveAll(tempDir); err != nil {
+			fmt.Printf("Warning: failed to cleanup temp directory %s: %v\n", tempDir, err)
+		}
+	}
 }

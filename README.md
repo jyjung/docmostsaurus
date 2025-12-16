@@ -50,10 +50,11 @@ docker-compose up -d
 ### 환경변수 설정
 
 ```bash
-export DOCMOST_BASE_URL="https://your-docmost-instance.com/api"
+export DOCMOST_BASE_URL="https://your-docmost-instance.com"
 export DOCMOST_EMAIL="your-email@example.com"
 export DOCMOST_PASSWORD="your-password"
 export OUTPUT_DIR="./output"
+export SYNC_INTERVAL="1h"
 ```
 
 ### 직접 실행
@@ -115,40 +116,42 @@ docmostsaurus/
 
 ## 변환 결과물
 
-### Frontmatter
+Docmost에서 내보낸 마크다운을 Docusaurus에서 빌드 가능하도록 다음과 같은 후처리를 수행합니다:
 
-각 마크다운 파일에 Docusaurus 호환 frontmatter가 추가됩니다:
+### 콘텐츠 변환
 
-```yaml
----
-id: page-unique-id
-title: 페이지 제목
-sidebar_label: 사이드바 표시 이름
-sidebar_position: 1
-description: 페이지 설명
-tags:
-  - tag1
-  - tag2
-last_update:
-  date: 2024-01-01
-  author: 작성자
----
+| 변환 항목 | Before | After |
+|----------|--------|-------|
+| Placeholder 래핑 | `{variable}` | `` `{variable}` `` |
+| React Fragment 래핑 | `<>`, `</>` | `` `<>` ``, `` `</>` `` |
+| Raw HTML 래핑 | `<table>...</table>` | ` ```html ... ``` ` 코드블록 |
+
+### 파일명/폴더명 변환
+
+| 변환 항목 | Before | After |
+|----------|--------|-------|
+| 한글 로마자화 | `머메이드.md` | `meomeideu.md` |
+| 특수문자 치환 | `C++ & Java.md` | `C-plus-plus--and--Java.md` |
+| 확장자 앞 공백 제거 | `OIDC .md` | `OIDC.md` |
+
+### 구조 변환
+
+| 변환 항목 | 설명 |
+|----------|------|
+| Frontmatter 추가 | `title`, `sidebar_position` 자동 생성 |
+| Slash Split 병합 | `/` 포함 제목으로 분리된 파일 병합 |
+| 동명 파일/폴더 병합 | `doc.md` + `doc/` → `doc/doc.md` |
+| Untitled 제거 | placeholder `untitled.md` 파일 삭제 |
+
+### 특수문자 치환 규칙
+
+```
+& → -and-    + → -plus-    @ → -at-
+# → -num-    % → -pct-     = → -eq-
+(), [], {}, '', "" → 제거
 ```
 
-### 사이드바 구조
-
-Space와 Page 계층 구조를 반영한 `_category_.json` 파일이 자동 생성됩니다:
-
-```json
-{
-  "label": "카테고리 이름",
-  "position": 1,
-  "link": {
-    "type": "generated-index",
-    "description": "카테고리 설명"
-  }
-}
-```
+> 상세 후처리 파이프라인은 [DOCUSAURUS_FORMAT_WORK.md](./DOCUSAURUS_FORMAT_WORK.md)를 참조하세요.
 
 ## 라이선스
 
