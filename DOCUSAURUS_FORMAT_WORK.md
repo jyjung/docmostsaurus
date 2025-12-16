@@ -399,6 +399,6 @@ After:  OIDC.md
 
 ## 참고
 
-- 모든 후처리는 `cmd/docmost-file-sync/main.go`에서 순차적으로 실행
+- 모든 후처리는 `cmd/docmostsaurus/main.go`에서 순차적으로 실행
 - `_metadata.json`은 Space의 페이지 계층 구조 정보를 담고 있어 Frontmatter 생성에 활용
 - files/ 폴더 병합 시 동일 파일명이 있으면 기존 파일 유지 (덮어쓰지 않음)

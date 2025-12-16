@@ -1,6 +1,6 @@
 문제: 현재 파일 싱크 생성시 다음과 같이 docmost의  (workspace ? or space?) 이름의 폴더를 생성하고 이안에서 파일 작업을 바로 진행.  
 
-jjy@jjygenmini:~/develop/docushow/docs/docmost-sync$ tree -L 1
+jjy@jjygenmini:~/develop/docushow/docs/docmostsaurus$ tree -L 1
 .
 ├── Security365 Common
 ├── Security365Common

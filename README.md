@@ -24,7 +24,7 @@ docmostsaurus은 Docmost의 문서를 주기적으로 가져와 Docusaurus 포�
 ```bash
 git clone https://github.com/jyjung/docmostsaurus.git
 cd docmostsaurus
-go build -o docmost-sync ./cmd/docmost-file-sync
+go build -o docmostsaurus ./cmd/docmostsaurus
 ```
 
 ### Docker 사용
@@ -69,7 +69,7 @@ export HTTP_PORT=":8080"
 ### 직접 실행
 
 ```bash
-go run ./cmd/docmost-file-sync
+go run ./cmd/docmostsaurus
 ```
 
 ### Docker Compose 실행
@@ -110,7 +110,7 @@ docker-compose down
 ```
 docmostsaurus/
 ├── cmd/
-│   └── docmost-file-sync/
+│   └── docmostsaurus/
 │       └── main.go              # 엔트리포인트
 ├── internal/
 │   ├── config/

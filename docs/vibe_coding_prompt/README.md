@@ -13,7 +13,7 @@ Docmost 워크스페이스의 모든 페이지를 마크다운 파일로 로컬�
 
 ```bash
 # 프로젝트 루트에서 빌드
-go build -o docmost-file-sync ./cmd/docmost-file-sync/
+go build -o docmostsaurus ./cmd/docmostsaurus/
 ```
 
 ## 환경 변수 설정
@@ -42,7 +42,7 @@ export DOCMOST_EMAIL="user@example.com"
 export DOCMOST_PASSWORD="your-password"
 export OUTPUT_DIR="./docmost-export"
 
-./docmost-file-sync
+./docmostsaurus
 ```
 
 ### 방법 2: 인라인 환경 변수
@@ -52,7 +52,7 @@ DOCMOST_BASE_URL="http://192.168.31.101:3456" \
 DOCMOST_EMAIL="user@example.com" \
 DOCMOST_PASSWORD="your-password" \
 OUTPUT_DIR="./docmost-export" \
-./docmost-file-sync
+./docmostsaurus
 ```
 
 ### 방법 3: 커맨드 라인 플래그
@@ -62,7 +62,7 @@ OUTPUT_DIR="./docmost-export" \
 DOCMOST_BASE_URL="http://192.168.31.101:3456" \
 DOCMOST_EMAIL="user@example.com" \
 DOCMOST_PASSWORD="your-password" \
-./docmost-file-sync -output /path/to/export
+./docmostsaurus -output /path/to/export
 ```
 
 ## 출력 구조
@@ -82,7 +82,7 @@ output/
 ## 실행 예시
 
 ```
-$ ./docmost-file-sync
+$ ./docmostsaurus
 === Docmost Markdown Exporter ===
 Server: http://192.168.31.101:3456
 Output: ./output

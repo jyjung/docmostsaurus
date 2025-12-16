@@ -10,8 +10,8 @@
 |------|------|------|
 | Config에 SYNC_INTERVAL | ✅ 구현됨 | `internal/config/config.go` |
 | Docmost API 클라이언트 | ✅ 구현됨 | `internal/docmost/client.go` |
-| Docusaurus 변환 파이프라인 | ✅ 구현됨 | `cmd/docmost-file-sync/main.go` |
-| Atomic Swap (Blue-Green) | ✅ 구현됨 | `cmd/docmost-file-sync/main.go` |
+| Docusaurus 변환 파이프라인 | ✅ 구현됨 | `cmd/docmostsaurus/main.go` |
+| Atomic Swap (Blue-Green) | ✅ 구현됨 | `cmd/docmostsaurus/main.go` |
 | 주기적 실행 로직 | ❌ 미구현 | 현재 1회 실행 후 종료 |
 
 ### 환경변수 설정 (`.env`)
@@ -256,20 +256,20 @@ func (s *Scheduler) runSync() error {
 FROM golang:1.21-alpine AS builder
 WORKDIR /app
 COPY . .
-RUN go build -o /docmost-sync ./cmd/docmost-file-sync
+RUN go build -o /docmostsaurus ./cmd/docmostsaurus
 
 FROM alpine:latest
-COPY --from=builder /docmost-sync /docmost-sync
+COPY --from=builder /docmostsaurus /docmostsaurus
 
 # SIGTERM을 제대로 받을 수 있도록 설정
 STOPSIGNAL SIGTERM
-ENTRYPOINT ["/docmost-sync"]
+ENTRYPOINT ["/docmostsaurus"]
 ```
 
 ```yaml
 # docker-compose.yml
 services:
-  docmost-sync:
+  docmostsaurus:
     build: .
     stop_grace_period: 60s  # 종료 대기 시간
 ```
@@ -353,7 +353,7 @@ func (l *FileLock) Unlock() error {
 
 ```go
 func main() {
-    lock := lock.NewFileLock("/var/run/docmost-sync.lock")
+    lock := lock.NewFileLock("/var/run/docmostsaurus.lock")
 
     if err := lock.TryLock(); err != nil {
         log.Fatalf("Failed to acquire lock: %v", err)
@@ -401,7 +401,7 @@ func main() {
     log.Info().
         Str("interval", cfg.SyncInterval.String()).
         Str("output_dir", cfg.OutputDir).
-        Msg("Starting docmost-sync")
+        Msg("Starting docmostsaurus")
 
     // 동기화 시작
     log.Info().
@@ -427,14 +427,14 @@ func main() {
 
 개발 환경 (ConsoleWriter):
 ```
-2024-01-15T10:30:00+09:00 INF Starting docmost-sync interval=1h output_dir=./output
+2024-01-15T10:30:00+09:00 INF Starting docmostsaurus interval=1h output_dir=./output
 2024-01-15T10:30:01+09:00 INF Processing space space=Engineering pages=42
 2024-01-15T10:30:15+09:00 INF Space sync completed space=Engineering duration=14.2s
 ```
 
 프로덕션 (JSON):
 ```json
-{"level":"info","time":"2024-01-15T10:30:00+09:00","interval":"1h","output_dir":"./output","message":"Starting docmost-sync"}
+{"level":"info","time":"2024-01-15T10:30:00+09:00","interval":"1h","output_dir":"./output","message":"Starting docmostsaurus"}
 {"level":"info","time":"2024-01-15T10:30:01+09:00","space":"Engineering","pages":42,"message":"Processing space"}
 {"level":"info","time":"2024-01-15T10:30:15+09:00","space":"Engineering","duration":14.2,"message":"Space sync completed"}
 ```
@@ -597,18 +597,18 @@ func updateHealthFile(path string) error {
 FROM golang:1.21-alpine AS builder
 WORKDIR /app
 COPY . .
-RUN go build -o /docmost-sync ./cmd/docmost-file-sync
+RUN go build -o /docmostsaurus ./cmd/docmostsaurus
 
 FROM alpine:latest
 RUN apk add --no-cache curl
-COPY --from=builder /docmost-sync /docmost-sync
+COPY --from=builder /docmostsaurus /docmostsaurus
 
 # 헬스체크 설정
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8080/health || exit 1
 
 EXPOSE 8080
-ENTRYPOINT ["/docmost-sync"]
+ENTRYPOINT ["/docmostsaurus"]
 ```
 
 ### docker-compose.yml
@@ -617,7 +617,7 @@ ENTRYPOINT ["/docmost-sync"]
 version: '3.8'
 
 services:
-  docmost-sync:
+  docmostsaurus:
     build: .
     ports:
       - "8080:8080"
@@ -646,7 +646,7 @@ services:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: docmost-sync
+  name: docmostsaurus
 spec:
   template:
     spec:

@@ -26,7 +26,7 @@
 
 ```
 /home/jjy/develop/public/docmostsaurus/
-├── cmd/docmost-file-sync/
+├── cmd/docmostsaurus/
 │   ├── main.go                    # 메인 진입점 (핵심 수정 대상)
 │   ├── README.md
 │   └── .env
