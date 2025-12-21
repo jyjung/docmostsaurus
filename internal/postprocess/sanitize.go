@@ -487,6 +487,316 @@ func removeSpaceBeforeExt(name string) string {
 	return baseName + ext
 }
 
+// FixSlashInTitles fixes files/folders that were incorrectly split due to "/" in the title.
+// When a page title contains "/", docmost creates a nested directory structure instead of a single file.
+// This function:
+// 1. Finds pages with "/" in their title from _metadata.json
+// 2. Merges the incorrectly split directory structure into a single file
+// 3. Updates _metadata.json to replace "/" with "-" in titles
+//
+// Example:
+//
+//	Title: "Security365 환경 인증/인가 관련 공통 에러 페이지"
+//	Wrong structure created by docmost:
+//	  └── Security365 환경 인증/
+//	      └── 인가 관련 공통 에러 페이지.md
+//	Expected (after this fix):
+//	  └── Security365 환경 인증-인가 관련 공통 에러 페이지.md
+//	And _metadata.json title is updated to: "Security365 환경 인증-인가 관련 공통 에러 페이지"
+func FixSlashInTitles(spaceDir string) error {
+	metaPath := filepath.Join(spaceDir, "_metadata.json")
+
+	// Read metadata file
+	metaData, err := os.ReadFile(metaPath)
+	if err != nil {
+		return fmt.Errorf("failed to read metadata: %w", err)
+	}
+
+	var spaceMeta SpaceMeta
+	if err := json.Unmarshal(metaData, &spaceMeta); err != nil {
+		return fmt.Errorf("failed to parse metadata: %w", err)
+	}
+
+	// Track if any changes were made
+	modified := false
+
+	// Find all pages with "/" in their title and fix them
+	fixSlashPagesRecursive(spaceDir, spaceMeta.Pages, &modified)
+
+	// If modifications were made, save the updated metadata
+	if modified {
+		updatedData, err := json.MarshalIndent(spaceMeta, "", "  ")
+		if err != nil {
+			return fmt.Errorf("failed to marshal updated metadata: %w", err)
+		}
+		if err := os.WriteFile(metaPath, updatedData, 0644); err != nil {
+			return fmt.Errorf("failed to write updated metadata: %w", err)
+		}
+		fmt.Printf("  Updated _metadata.json with fixed titles\n")
+	}
+
+	return nil
+}
+
+// fixSlashPagesRecursive recursively processes pages to fix slash-split files
+func fixSlashPagesRecursive(spaceDir string, pages []*PageMeta, modified *bool) {
+	for _, page := range pages {
+		if strings.Contains(page.Title, "/") {
+			// Calculate expected correct filename based on title
+			titleParts := strings.Split(page.Title, "/")
+			var correctFileNameParts []string
+			for _, part := range titleParts {
+				correctFileNameParts = append(correctFileNameParts, strings.TrimSpace(part))
+			}
+			expectedFileName := strings.Join(correctFileNameParts, "-") + ".md"
+
+			// Try to fix the slash-split file structure
+			newFilePath := fixSlashSplitPage(spaceDir, page)
+
+			// Update title regardless of whether file was moved
+			oldTitle := page.Title
+			page.Title = strings.ReplaceAll(page.Title, "/", "-")
+
+			if newFilePath != "" {
+				// File was moved, update filePath
+				fmt.Printf("  Fixed title: '%s' -> '%s'\n", oldTitle, page.Title)
+				oldFilePath := page.FilePath
+				page.FilePath = newFilePath
+				fmt.Printf("  Fixed filePath: '%s' -> '%s'\n", oldFilePath, newFilePath)
+				*modified = true
+			} else {
+				// File wasn't found in wrong structure, check if correct file exists
+				expectedFullPath := filepath.Join(spaceDir, expectedFileName)
+				if _, err := os.Stat(expectedFullPath); err == nil {
+					// Correct file exists, just update metadata
+					fmt.Printf("  Fixed title: '%s' -> '%s'\n", oldTitle, page.Title)
+					if page.FilePath == "" || page.FilePath != expectedFileName {
+						oldFilePath := page.FilePath
+						page.FilePath = expectedFileName
+						fmt.Printf("  Set filePath: '%s' -> '%s' (file already exists)\n", oldFilePath, expectedFileName)
+					}
+					*modified = true
+				} else {
+					fmt.Printf("  Warning: Could not find file for '%s' (expected: %s)\n", oldTitle, expectedFileName)
+				}
+			}
+		}
+
+		// Process children recursively
+		if page.HasChildren && len(page.Children) > 0 {
+			fixSlashPagesRecursive(spaceDir, page.Children, modified)
+		}
+	}
+}
+
+// fixSlashSplitPage fixes a single page that was incorrectly split due to "/" in title
+// Returns the new file path (relative to spaceDir) if fixed, empty string otherwise
+func fixSlashSplitPage(spaceDir string, page *PageMeta) string {
+	// The title contains "/", which means docmost created a nested structure
+	titleParts := strings.Split(page.Title, "/")
+	if len(titleParts) < 2 {
+		return ""
+	}
+
+	// Build the expected wrong path parts
+	// First part becomes directory, last part becomes file
+	var wrongPathParts []string
+	for i, part := range titleParts {
+		part = strings.TrimSpace(part)
+		if i == len(titleParts)-1 {
+			// Last part is the file
+			wrongPathParts = append(wrongPathParts, part+".md")
+		} else {
+			// Other parts are directories
+			wrongPathParts = append(wrongPathParts, part)
+		}
+	}
+
+	// Build the correct merged filename (join all parts with "-")
+	var correctFileNameParts []string
+	for _, part := range titleParts {
+		correctFileNameParts = append(correctFileNameParts, strings.TrimSpace(part))
+	}
+	correctFileName := strings.Join(correctFileNameParts, "-") + ".md"
+
+	// Search for the wrong directory structure
+	wrongDirName := wrongPathParts[0]
+
+	// Find and process the wrong structure
+	var resultFilePath string
+	filepath.Walk(spaceDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil || resultFilePath != "" {
+			return nil
+		}
+
+		if !info.IsDir() {
+			return nil
+		}
+
+		dirName := filepath.Base(path)
+		if dirName != wrongDirName {
+			return nil
+		}
+
+		// Found a directory matching the first part of the title
+		// Build the wrong file path by joining all parts after the first directory
+		wrongFilePath := path
+		for _, part := range wrongPathParts[1:] {
+			wrongFilePath = filepath.Join(wrongFilePath, part)
+		}
+
+		if _, err := os.Stat(wrongFilePath); os.IsNotExist(err) {
+			return nil // Wrong file doesn't exist, skip
+		}
+
+		// Read the content from the wrong location
+		content, err := os.ReadFile(wrongFilePath)
+		if err != nil {
+			fmt.Printf("Warning: failed to read file %s: %v\n", wrongFilePath, err)
+			return nil
+		}
+
+		// Determine the correct path (same parent as the wrong directory)
+		correctFilePath := filepath.Join(filepath.Dir(path), correctFileName)
+
+		// Check if correct file already exists
+		if _, err := os.Stat(correctFilePath); err == nil {
+			fmt.Printf("  Correct file already exists, skipping: %s\n", correctFilePath)
+			return nil
+		}
+
+		// Write to the correct location
+		fmt.Printf("  Fixing slash-split file: %s -> %s\n", wrongFilePath, correctFilePath)
+		if err := os.WriteFile(correctFilePath, content, 0644); err != nil {
+			fmt.Printf("Warning: failed to write merged file %s: %v\n", correctFilePath, err)
+			return nil
+		}
+
+		// Remove the wrong file
+		if err := os.Remove(wrongFilePath); err != nil {
+			fmt.Printf("Warning: failed to remove wrong file %s: %v\n", wrongFilePath, err)
+		}
+
+		// Try to remove the empty parent directories
+		cleanupEmptyParentDirs(path, spaceDir)
+
+		// Calculate relative path from spaceDir for the new file
+		relPath, err := filepath.Rel(spaceDir, correctFilePath)
+		if err != nil {
+			relPath = correctFileName
+		}
+		resultFilePath = relPath
+
+		return filepath.SkipDir
+	})
+
+	return resultFilePath
+}
+
+// RemoveOrphanedFiles removes files that exist in the filesystem but are not referenced in _metadata.json.
+// This handles the case where previously deleted items still exist in the export folder.
+// Note: FixSlashInTitles should be called before this function.
+func RemoveOrphanedFiles(spaceDir string) error {
+	metaPath := filepath.Join(spaceDir, "_metadata.json")
+
+	// Read metadata file
+	metaData, err := os.ReadFile(metaPath)
+	if err != nil {
+		return fmt.Errorf("failed to read metadata: %w", err)
+	}
+
+	var spaceMeta SpaceMeta
+	if err := json.Unmarshal(metaData, &spaceMeta); err != nil {
+		return fmt.Errorf("failed to parse metadata: %w", err)
+	}
+
+	// Build a set of valid file paths from metadata
+	validFiles := make(map[string]bool)
+	collectValidFilePaths(spaceMeta.Pages, validFiles)
+
+	// Also mark _metadata.json as valid
+	validFiles["_metadata.json"] = true
+
+	// Log valid files from metadata
+	fmt.Printf("  Found %d valid file paths in _metadata.json\n", len(validFiles)-1) // -1 for _metadata.json itself
+
+	// Collect all .md files and files to remove
+	var allMdFiles []string
+	var filesToRemove []string
+
+	err = filepath.Walk(spaceDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		// Skip the root directory
+		if path == spaceDir {
+			return nil
+		}
+
+		// Skip directories (we'll remove empty ones later)
+		if info.IsDir() {
+			return nil
+		}
+
+		// Skip non-.md files (like files/ folder contents, images, etc.)
+		fileName := filepath.Base(path)
+		if !strings.HasSuffix(strings.ToLower(fileName), ".md") {
+			return nil
+		}
+
+		// Get relative path from spaceDir
+		relPath, err := filepath.Rel(spaceDir, path)
+		if err != nil {
+			return nil
+		}
+
+		allMdFiles = append(allMdFiles, relPath)
+
+		// Check if this file is in the valid set
+		if !validFiles[relPath] {
+			filesToRemove = append(filesToRemove, path)
+			fmt.Printf("  [Orphaned] %s (not in _metadata.json)\n", relPath)
+		}
+
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("  Scanned %d .md files in filesystem\n", len(allMdFiles))
+
+	// Remove orphaned files
+	for _, filePath := range filesToRemove {
+		relPath, _ := filepath.Rel(spaceDir, filePath)
+		fmt.Printf("  Removing orphaned file: %s\n", relPath)
+		if err := os.Remove(filePath); err != nil {
+			fmt.Printf("  Warning: failed to remove orphaned file %s: %v\n", relPath, err)
+		}
+	}
+
+	if len(filesToRemove) > 0 {
+		fmt.Printf("  Removed %d orphaned file(s)\n", len(filesToRemove))
+	} else {
+		fmt.Printf("  No orphaned files found\n")
+	}
+
+	return nil
+}
+
+// collectValidFilePaths recursively collects all file paths from the metadata pages
+func collectValidFilePaths(pages []*PageMeta, validFiles map[string]bool) {
+	for _, page := range pages {
+		if page.FilePath != "" {
+			validFiles[page.FilePath] = true
+		}
+		if page.HasChildren && len(page.Children) > 0 {
+			collectValidFilePaths(page.Children, validFiles)
+		}
+	}
+}
+
 // RemoveUntitledFiles removes untitled placeholder files created by Docmost.
 // It removes files matching these criteria:
 // 1. Filename is "untitled.md" (case-insensitive) with content "# untitled" or "# untitled (N)"

@@ -200,10 +200,16 @@ func runSync(ctx context.Context, cfg *config.Config) error {
 
 		log.Printf("Space '%s': %d files saved to %s", exported.Space.Name, len(exported.Files), spaceDirTemp)
 
-		// Post-process: Remove untitled placeholder files (untitled.md with "# untitled" content)
-		log.Printf("Post-processing: Removing untitled placeholder files in %s...", spaceDirTemp)
-		if err := postprocess.RemoveUntitledFiles(spaceDirTemp); err != nil {
-			log.Printf("Warning: failed to remove untitled files: %v", err)
+		// Post-process: Fix files/folders split due to "/" in title and update _metadata.json
+		log.Printf("Post-processing: Fixing slash-split files and titles in %s...", spaceDirTemp)
+		if err := postprocess.FixSlashInTitles(spaceDirTemp); err != nil {
+			log.Printf("Warning: failed to fix slash-split files: %v", err)
+		}
+
+		// Post-process: Remove orphaned files not in _metadata.json
+		log.Printf("Post-processing: Removing orphaned files in %s...", spaceDirTemp)
+		if err := postprocess.RemoveOrphanedFiles(spaceDirTemp); err != nil {
+			log.Printf("Warning: failed to remove orphaned files: %v", err)
 		}
 
 		// Post-process: Wrap placeholders with backticks (before frontmatter)
@@ -299,12 +305,6 @@ func runSync(ctx context.Context, cfg *config.Config) error {
 			// Cleanup empty directories
 			if err := postprocess.CleanupEmptyDirs(spaceDirTemp); err != nil {
 				log.Printf("Warning: failed to cleanup empty dirs: %v", err)
-			}
-
-			// Final pass: Remove untitled placeholder files again (in case any were created during postprocessing)
-			log.Printf("Post-processing: Final removal of untitled placeholder files in %s...", spaceDirTemp)
-			if err := postprocess.RemoveUntitledFiles(spaceDirTemp); err != nil {
-				log.Printf("Warning: failed to remove untitled files (final pass): %v", err)
 			}
 		}
 
