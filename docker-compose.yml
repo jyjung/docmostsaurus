@@ -1,9 +1,9 @@
 services:
   docmostsaurus:
-    image: bungker/docmostsaurus:2025-12-16
-    # build:
-    #   context: .
-    #   dockerfile: Dockerfile
+    #image: bungker/docmostsaurus:2025-12-16
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: docmostsaurus
     restart: unless-stopped
     environment:
