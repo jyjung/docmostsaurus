@@ -49,7 +49,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, "  DOCMOST_PASSWORD  - Docmost login password")
 		fmt.Fprintln(os.Stderr, "\nOptional environment variables:")
 		fmt.Fprintln(os.Stderr, "  OUTPUT_DIR        - Output directory (default: ./output)")
-		fmt.Fprintln(os.Stderr, "  SYNC_INTERVAL     - Sync interval (default: 1h, e.g., 30m, 2h)")
+		fmt.Fprintln(os.Stderr, "  SYNC_INTERVAL     - Sync interval (e.g., 30m, 2h). If empty, run once and exit")
 		fmt.Fprintln(os.Stderr, "  HTTP_PORT         - HTTP server port (default: :8080)")
 		os.Exit(1)
 	}

@@ -45,12 +45,17 @@ func Load() (*Config, error) {
 	}
 
 	// Parse sync interval
-	intervalStr := getEnv("SYNC_INTERVAL", "1h")
-	interval, err := time.ParseDuration(intervalStr)
-	if err != nil {
-		interval = time.Hour
+	// If SYNC_INTERVAL is empty or not set, run once and exit (SyncInterval = 0)
+	intervalStr := os.Getenv("SYNC_INTERVAL")
+	if intervalStr == "" {
+		cfg.SyncInterval = 0
+	} else {
+		interval, err := time.ParseDuration(intervalStr)
+		if err != nil {
+			interval = time.Hour
+		}
+		cfg.SyncInterval = interval
 	}
-	cfg.SyncInterval = interval
 
 	return cfg, nil
 }
