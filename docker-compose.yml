@@ -8,9 +8,6 @@ services:
     restart: unless-stopped
     environment:
       # Docmost configuration
-      - DOCMOST_BASE_URL=${DOCMOST_BASE_URL:-http://docmost:3000}
-      - DOCMOST_EMAIL=${DOCMOST_EMAIL}
-      - DOCMOST_PASSWORD=${DOCMOST_PASSWORD}
       # Sync settings
       - SYNC_INTERVAL=${SYNC_INTERVAL:-1h}
       - OUTPUT_DIR=/app/output
